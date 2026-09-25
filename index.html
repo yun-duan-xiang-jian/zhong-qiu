@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d0a14">
+<title>月球诗球 · 815句诗词交织月球表面</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0d0a14; overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+  #canvas:active { cursor: grabbing; }
+  #info {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: #d4c4a0; font-family: "Microsoft YaHei", serif; font-size: 13px;
+    text-align: center; pointer-events: none; z-index: 10;
+    text-shadow: 0 0 10px rgba(212,196,160,0.3);
+  }
+  #info h1 { font-size: 18px; margin-bottom: 6px; color: #faf0d8; letter-spacing: 4px; }
+  #info p { opacity: 0.7; }
+  #counter {
+    position: fixed; bottom: 20px; left: 20px;
+    color: #e8c468; font-family: monospace; font-size: 12px;
+    background: rgba(20,15,10,0.7); padding: 8px 12px; border-radius: 6px;
+    border: 1px solid rgba(212,168,88,0.25);
+  }
+  #legend {
+    position: fixed; bottom: 20px; right: 20px;
+    color: #d4c4a0; font-family: "Microsoft YaHei", serif; font-size: 11px;
+    background: rgba(20,15,10,0.7); padding: 10px 14px; border-radius: 6px;
+    border: 1px solid rgba(212,168,88,0.25); line-height: 1.8;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  #poem-panel {
+    position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%) translateY(20px);
+    background: rgba(20,15,10,0.92); border: 1px solid rgba(212,168,88,0.4);
+    border-radius: 10px; padding: 20px 36px; text-align: center;
+    opacity: 0; pointer-events: none; transition: all 0.4s ease;
+    max-width: 90vw; box-shadow: 0 0 30px rgba(212,168,88,0.15);
+  }
+  #poem-panel.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #poem-panel .poem-text {
+    font-family: "KaiTi", "STKaiti", "Microsoft YaHei", serif;
+    font-size: 22px; color: #faf0d8; letter-spacing: 2px; line-height: 1.8;
+  }
+  #poem-panel .poem-index {
+    font-size: 11px; color: #b8a97a; margin-top: 8px; font-family: monospace;
+  }
+  #poem-panel .close-hint {
+    font-size: 11px; color: #8a7a5a; margin-top: 6px;
+  }
+  /* ===== 移动端适配 ===== */
+  @media (max-width: 600px) {
+    #info { top: 12px; font-size: 11px; }
+    #info h1 { font-size: 15px; letter-spacing: 3px; margin-bottom: 4px; }
+    #counter { bottom: 12px; left: 12px; font-size: 10px; padding: 6px 10px; }
+    #legend { bottom: 12px; right: 12px; font-size: 10px; padding: 8px 10px; line-height: 1.6; }
+    .legend-dot { width: 8px; height: 8px; }
+    #poem-panel { bottom: 70px; padding: 16px 20px; }
+    #poem-panel .poem-text { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="info">
+  <h1>月 球 诗 球</h1>
+  <p>815 句中秋诗词交织 · 拖拽旋转 · 滚轮缩放 · 点击诗句</p>
+</div>
+<div id="counter">诗句: 815 / 815</div>
+<div id="legend">
+  <div class="legend-item"><span class="legend-dot" style="background:#d4b86a"></span>中心诗核</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#faf0d8"></span>环形山</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#d8c89a"></span>辐射纹</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#f5e6c8"></span>月陆</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#b8a97a"></span>月海</div>
+  <div class="legend-item"><span class="legend-dot" style="background:#c9b070"></span>月晕</div>
+</div>
+<div id="poem-panel">
+  <div class="poem-text" id="poemText"></div>
+  <div class="poem-index" id="poemIndex"></div>
+  <div class="close-hint">点击空白处关闭</div>
+</div>
+
+<script src="poems.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ============================================================
+// 1. 地貌区域配置（815句精确分配）
+// ============================================================
+const REGION_CONFIG = {
+  core:     { color: new THREE.Color(0xd4b86a), size: 0.65, alpha: 0.90, count: 1 },
+  crater:   { color: new THREE.Color(0xfaf0d8), size: 0.425, alpha: 0.85, count: 150 },
+  ray:      { color: new THREE.Color(0xd8c89a), size: 0.38, alpha: 0.65, count: 80 },
+  highland: { color: new THREE.Color(0xf5e6c8), size: 0.41, alpha: 0.88, count: 200 },
+  maria:    { color: new THREE.Color(0xb8a97a), size: 0.34, alpha: 0.72, count: 365 },
+  halo:     { color: new THREE.Color(0xc9b070), size: 0.365, alpha: 0.45, count: 19 }
+};
+const totalCount = Object.values(REGION_CONFIG).reduce((s, r) => s + r.count, 0);
+console.assert(totalCount === 815, `地貌分配总数应为815，实际为${totalCount}`);
+
+const RADIUS = 5;
+
+// ============================================================
+// 2. 坐标转换工具
+// ============================================================
+function lonLatToVec3(lon, lat, r) {
+  const phi = (90 - lat) * Math.PI / 180;
+  const theta = (lon + 180) * Math.PI / 180;
+  return new THREE.Vector3(
+    -r * Math.sin(phi) * Math.cos(theta),
+     r * Math.cos(phi),
+     r * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+// 环形山经纬度（15座）
+const CRATERS = [
+  { lon: -11, lat: -43 }, { lon: -20, lat: 10 },  { lon: -28, lat: 8 },
+  { lon: 15,  lat: 32 },  { lon: 50,  lat: 25 },  { lon: -120, lat: 5 },
+  { lon: 100, lat: -50 }, { lon: 80,  lat: 30 },  { lon: -60, lat: -20 },
+  { lon: 30,  lat: 50 },  { lon: -90, lat: 40 },  { lon: 160, lat: -30 },
+  { lon: 20,  lat: 0 },   { lon: -35, lat: -10 }, { lon: 0,   lat: 0 }
+];
+
+// 月海区域
+const MARIA_REGIONS = [
+  { lonRange: [-30, 15],  latRange: [30, 50],  count: 50 },
+  { lonRange: [10, 45],   latRange: [8, 20],   count: 50 },
+  { lonRange: [40, 70],   latRange: [15, 35],  count: 45 },
+  { lonRange: [75, 100],  latRange: [15, 25],  count: 40 },
+  { lonRange: [45, 80],   latRange: [-10, 5],  count: 45 },
+  { lonRange: [-75, -45], latRange: [-20, 0],  count: 40 },
+  { lonRange: [-50, -20], latRange: [-30, -15],count: 35 },
+  { lonRange: [15, 40],   latRange: [-30, -10],count: 30 }
+];
+
+// ============================================================
+// 2.5 程序化月面地形（JS版 —— 与球体GLSL着色器逐字对应）
+//     多频起伏 + 月海压平 + 15座环形山（碗形坑 + 隆起坑沿）
+// ============================================================
+const CRATER_DIRS = CRATERS.map(c => lonLatToVec3(c.lon, c.lat, 1).normalize());
+
+// 月海平滑掩码：0=月陆，1=月海深处，边界约3°过渡
+function mariaMaskN(n) {
+  const lat = Math.asin(Math.max(-1, Math.min(1, n.y))) * 180 / Math.PI;
+  let lon = Math.atan2(n.z, -n.x) * 180 / Math.PI - 180;
+  if (lon < -180) lon += 360;
+  let m = 0;
+  for (const b of MARIA_REGIONS) {
+    const dx = Math.max(b.lonRange[0] - lon, 0, lon - b.lonRange[1]);
+    const dy = Math.max(b.latRange[0] - lat, 0, lat - b.latRange[1]);
+    const d = Math.max(dx, dy);
+    m = Math.max(m, 1 - Math.min(d / 3, 1));
+  }
+  return m;
+}
+
+// 地形高度（单位向量n → 径向高度偏移）
+function terrainHeight(n, maria) {
+  let h = 0.050 * Math.sin(n.x * 4.0 + n.y * 3.0 + 1.7)
+        + 0.040 * Math.sin(n.y * 5.0 - n.z * 4.0 + 2.3)
+        + 0.030 * Math.sin(n.z * 6.0 + n.x * 5.0 + 0.5)
+        + 0.018 * Math.sin(n.x * 9.0 + n.z * 7.0 + 4.1)
+        + 0.012 * Math.sin(n.y * 13.0 - n.x * 11.0 + 2.0)
+        + 0.008 * Math.sin(n.z * 17.0 + n.y * 13.0 + 5.0);
+  h = h * (1.0 - 0.65 * maria) - 0.015 * maria;
+  for (let i = 0; i < CRATER_DIRS.length; i++) {
+    const c = CRATER_DIRS[i];
+    const d = Math.acos(Math.max(-1, Math.min(1, n.x * c.x + n.y * c.y + n.z * c.z)));
+    const dd = d / 0.060;
+    h += -0.12 * Math.exp(-dd * dd);
+    const dr = (d - 0.100) / 0.035;
+    h += 0.05 * Math.exp(-dr * dr);
+  }
+  return h;
+}
+
+// ============================================================
+// 3. 生成 815 句诗的球面锚点
+// ============================================================
+function generateAnchors() {
+  const anchors = [];
+  anchors.push({ pos: lonLatToVec3(0, 0, RADIUS), region: 'core' });
+  CRATERS.forEach(c => {
+    for (let k = 0; k < 10; k++) {
+      const angle = (k / 10) * Math.PI * 2;
+      const dLon = Math.cos(angle) * 2.5;
+      const dLat = Math.sin(angle) * 2.5;
+      anchors.push({ pos: lonLatToVec3(c.lon + dLon, c.lat + dLat, RADIUS), region: 'crater' });
+    }
+  });
+  const tycho = CRATERS[0];
+  for (let r = 0; r < 8; r++) {
+    const rayAngle = (r / 8) * Math.PI * 2;
+    for (let s = 1; s <= 10; s++) {
+      const dist = s * 2.8;
+      const lon = tycho.lon + Math.cos(rayAngle) * dist;
+      const lat = Math.max(-85, Math.min(85, tycho.lat + Math.sin(rayAngle) * dist * 0.7));
+      anchors.push({ pos: lonLatToVec3(lon, lat, RADIUS), region: 'ray' });
+    }
+  }
+  let mariaCount = 0;
+  MARIA_REGIONS.forEach(m => {
+    const [minLon, maxLon] = m.lonRange;
+    const [minLat, maxLat] = m.latRange;
+    const cols = Math.ceil(Math.sqrt(m.count * (maxLon - minLon) / (maxLat - minLat)));
+    const rows = Math.ceil(m.count / cols);
+    for (let r = 0; r < rows && mariaCount < m.count; r++) {
+      for (let c = 0; c < cols && mariaCount < m.count; c++) {
+        const lon = minLon + (c + 0.5) / cols * (maxLon - minLon);
+        const lat = minLat + (r + 0.5) / rows * (maxLat - minLat);
+        anchors.push({ pos: lonLatToVec3(lon, lat, RADIUS), region: 'maria' });
+        mariaCount++;
+      }
+    }
+  });
+  while (mariaCount < 365) {
+    anchors.push({ pos: lonLatToVec3(-180 + Math.random()*360, -30 + Math.random()*60, RADIUS), region: 'maria' });
+    mariaCount++;
+  }
+  let highlandCount = 0;
+  const hCols = 20, hRows = 10;
+  for (let r = 0; r < hRows && highlandCount < 200; r++) {
+    for (let c = 0; c < hCols && highlandCount < 200; c++) {
+      const lat = (r < hRows/2) ? 20 + (r/(hRows/2-1))*65 : -20 - ((r-hRows/2)/(hRows/2-1))*65;
+      const lon = -180 + (c+0.5)/hCols*360;
+      anchors.push({ pos: lonLatToVec3(lon, lat, RADIUS), region: 'highland' });
+      highlandCount++;
+    }
+  }
+  while (highlandCount < 200) {
+    const lat = (Math.random()>0.5?1:-1) * (25 + Math.random()*55);
+    anchors.push({ pos: lonLatToVec3(-180+Math.random()*360, lat, RADIUS), region: 'highland' });
+    highlandCount++;
+  }
+  for (let i = 0; i < 19; i++) {
+    const angle = (i/19) * Math.PI * 2;
+    const lon = -180 + (angle/(2*Math.PI))*360;
+    const lat = Math.sin(angle*0.5)*15;
+    anchors.push({ pos: lonLatToVec3(lon, lat, RADIUS), region: 'halo' });
+  }
+  console.assert(anchors.length === 815, `锚点总数应为815，实际为${anchors.length}`);
+  return anchors;
+}
+
+// ============================================================
+// 4. 构建单字纹理图集（每个汉字一格，去重以节省纹理空间）
+// ============================================================
+function buildCharAtlas(uniqueChars) {
+  const cellW = 128, cellH = 128;
+  const cols = Math.ceil(Math.sqrt(uniqueChars.length * (cellW / cellH)));
+  const rows = Math.ceil(uniqueChars.length / cols);
+  const canvas = document.createElement('canvas');
+  canvas.width = cols * cellW;
+  canvas.height = rows * cellH;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  const charUVMap = {};
+  uniqueChars.forEach((ch, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = col * cellW + cellW / 2;
+    const y = row * cellH + cellH / 2;
+    ctx.font = `96px "KaiTi", "STKaiti", "Microsoft YaHei", serif`;
+    ctx.fillText(ch, x, y);
+    charUVMap[ch] = {
+      u0: (col * cellW + 8) / canvas.width,
+      v0: (row * cellH + 8) / canvas.height,
+      u1: ((col + 1) * cellW - 8) / canvas.width,
+      v1: ((row + 1) * cellH - 8) / canvas.height
+    };
+  });
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return { texture, charUVMap };
+}
+
+// ============================================================
+// 5. 初始化场景
+// ============================================================
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0a14);
+scene.fog = new THREE.FogExp2(0x0d0a14, 0.025);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 16);
+camera.layers.enable(1); // 允许主相机渲染第1层（底层载体球）
+
+// 光源（供底层载体球 MeshStandardMaterial 着色，方向与诗句粒子光照一致）
+const moonLight = new THREE.DirectionalLight(0xfff4e0, 1.4);
+moonLight.position.set(0.6, 0.3, 0.8).normalize().multiplyScalar(20);
+scene.add(moonLight);
+scene.add(new THREE.AmbientLight(0x403828, 0.5));
+
+// 星空
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(3000 * 3);
+for (let i = 0; i < 3000; i++) {
+  const r = 200 + Math.random() * 100;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  starPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+  starPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+  starPos[i*3+2] = r * Math.cos(phi);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+  color: 0xe8d5a8, size: 0.3, sizeAttenuation: true, transparent: true, opacity: 0.7, fog: false
+}));
+scene.add(stars);
+
+// ---- 泛光后期（Bloom：让受光面/诗句/月缘整体晕出淡淡月辉）----
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { samples: 4, type: THREE.HalfFloatType }));
+composer.setPixelRatio(renderer.getPixelRatio());
+composer.setSize(window.innerWidth, window.innerHeight);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.25, 0.5, 0.55);
+bloomPass.renderToScreen = true;
+bloomPass.threshold = 0.55;
+bloomPass.strength = 0.25;
+bloomPass.radius = 0.5;
+composer.addPass(bloomPass);
+
+// ============================================================
+// 6. 单字粒子系统：将815句诗拆成单字，均匀分布于球面，按地形着色
+// ============================================================
+// 收集所有单字（保留顺序），并建立 单字→所属诗句 索引（用于点击回看）
+const baseChars = [];
+const baseCharToPoem = [];
+POEMS.forEach((poem, pi) => {
+  for (const ch of poem) { baseChars.push(ch); baseCharToPoem.push(pi); }
+});
+// 字数 ×2：重复一遍所有单字，以更高密度构成完整球壳
+const ALL_CHARS = baseChars.concat(baseChars);
+const charToPoem = baseCharToPoem.concat(baseCharToPoem);
+const UNIQUE_CHARS = [...new Set(ALL_CHARS)];
+const atlas = buildCharAtlas(UNIQUE_CHARS);
+console.log(`📝 单字粒子：共 ${ALL_CHARS.length} 字（×2），去重后 ${UNIQUE_CHARS.length} 个不同汉字`);
+
+const N = ALL_CHARS.length;
+const positions = new Float32Array(N * 3);
+const normals = new Float32Array(N * 3);
+const colors = new Float32Array(N * 3);
+const sizes = new Float32Array(N);
+const alphas = new Float32Array(N);
+const phases = new Float32Array(N);
+const uvs = new Float32Array(N * 4);
+const selected = new Float32Array(N);
+
+const tychoDir = lonLatToVec3(CRATERS[0].lon, CRATERS[0].lat, 1);
+
+for (let i = 0; i < N; i++) {
+  // Fibonacci 球面均匀分布
+  const phi = Math.acos(1 - 2 * (i + 0.5) / N);
+  const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+  const nx = Math.sin(phi) * Math.cos(theta);
+  const ny = Math.cos(phi);
+  const nz = Math.sin(phi) * Math.sin(theta);
+  const n = new THREE.Vector3(nx, ny, nz);
+
+  // 地形属性
+  const maria = mariaMaskN(n);
+  const h = terrainHeight(n, maria);
+  const r = RADIUS * 0.996 + h + 0.012;
+  positions[i*3] = nx * r; positions[i*3+1] = ny * r; positions[i*3+2] = nz * r;
+  normals[i*3] = nx; normals[i*3+1] = ny; normals[i*3+2] = nz;
+
+  // 基础色：月海偏暗、月陆偏亮，暖黄调
+  const isHighland = Math.abs(ny) > 0.34;
+  let baseShade;
+  if (maria > 0.5) baseShade = 0.30 + Math.random() * 0.08;
+  else if (isHighland) baseShade = 0.52 + Math.random() * 0.12;
+  else baseShade = 0.40 + Math.random() * 0.10;
+  const hf = Math.max(0, Math.min(1, (h + 0.18) / 0.36));
+  let shade = baseShade * (0.80 + 0.32 * hf);
+
+  // 环形山调制：坑底暗、坑沿亮且略大
+  let sizeBoost = 1.0;
+  for (let ci = 0; ci < CRATER_DIRS.length; ci++) {
+    const c = CRATER_DIRS[ci];
+    const d = Math.acos(Math.max(-1, Math.min(1, n.x * c.x + n.y * c.y + n.z * c.z)));
+    const dd = d / 0.060;
+    shade *= 1.0 - 0.55 * Math.exp(-dd * dd);            // 坑底变暗
+    const dr = (d - 0.100) / 0.035;
+    const rim = Math.exp(-dr * dr);
+    shade += 0.22 * rim;                                  // 坑沿变亮
+    sizeBoost += 0.35 * rim;                              // 坑沿字略大
+  }
+
+  // 第谷辐射纹调制：沿12条放射方向变亮
+  const tdot = Math.max(-1, Math.min(1, n.x * tychoDir.x + n.y * tychoDir.y + n.z * tychoDir.z));
+  const tychoDist = Math.acos(tdot);
+  const angT = Math.atan2(nz, nx);
+  for (let rk = 0; rk < 12; rk++) {
+    const rayAng = (rk / 12) * Math.PI * 2;
+    let da = Math.abs(angT - rayAng);
+    if (da > Math.PI) da = 2 * Math.PI - da;
+    const rayW = Math.exp(-da * da / 0.025) * Math.max(0, 1 - tychoDist * 1.5);
+    shade += 0.15 * rayW;
+  }
+  shade = Math.max(0.08, Math.min(0.92, shade));
+
+  colors[i*3] = shade * 0.96;
+  colors[i*3+1] = shade * 0.84;
+  colors[i*3+2] = shade * 0.58;
+  sizes[i] = (0.085 + Math.random() * 0.07) * sizeBoost;
+  alphas[i] = 0.35 + Math.random() * 0.25;
+  phases[i] = Math.random() * Math.PI * 2;
+  selected[i] = 0;
+
+  const uv = atlas.charUVMap[ALL_CHARS[i]];
+  uvs[i*4] = uv.u0; uvs[i*4+1] = uv.v0; uvs[i*4+2] = uv.u1; uvs[i*4+3] = uv.v1;
+}
+
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+pGeo.setAttribute('aNormal', new THREE.BufferAttribute(normals, 3));
+pGeo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+pGeo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+pGeo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
+pGeo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+pGeo.setAttribute('aSelected', new THREE.BufferAttribute(selected, 1));
+pGeo.setAttribute('aUV', new THREE.BufferAttribute(uvs, 4));
+
+const pMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uPoemTex: { value: atlas.texture },
+    uLightDir: { value: new THREE.Vector3(0.6, 0.3, 0.8).normalize() },
+    uTime: { value: 0 },
+    uPixelRatio: { value: renderer.getPixelRatio() },
+    uGlowIntensity: { value: 0.75 }
+  },
+  vertexShader: `
+    attribute vec3 aNormal; attribute vec3 aColor; attribute float aSize;
+    attribute float aAlpha; attribute float aPhase; attribute float aSelected; attribute vec4 aUV;
+    varying vec3 vColor; varying float vAlpha; varying vec4 vUV; varying float vLight; varying float vSelected; varying float vPhase;
+    uniform vec3 uLightDir; uniform float uTime; uniform float uPixelRatio;
+    void main() {
+      vColor = aColor; vAlpha = aAlpha; vUV = aUV; vSelected = aSelected; vPhase = aPhase;
+      vec3 normal = normalize(aNormal);
+      float breathe = sin(uTime * 0.8 + aPhase) * 0.008;
+      float dx = sin(uTime * 0.5 + aPhase * 1.3) * 0.006;
+      float dy = cos(uTime * 0.6 + aPhase * 0.7) * 0.006;
+      vec3 up = abs(normal.y) < 0.9 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0);
+      vec3 tangent = normalize(cross(up, normal));
+      vec3 bitangent = normalize(cross(normal, tangent));
+      vec3 pos = position + normal * breathe + tangent * dx + bitangent * dy;
+      pos = pos + normal * aSelected * 1.2;
+      vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+      // 法线变换到视图空间，与视图方向、光照方向在同一空间计算
+      vec3 normalView = normalize(normalMatrix * normal);
+      vec3 viewDir = normalize(-mvPos.xyz);
+      float facing = dot(normalView, viewDir);
+      float limb = pow(clamp(facing, 0.0, 1.0), 0.4);
+      // 光照方向也变换到视图空间
+      vec3 lightView = normalize(normalMatrix * normalize(uLightDir));
+      float diff = dot(normalView, lightView);
+      float dayLight = smoothstep(-0.02, 0.12, diff);
+      float sunLit = 0.10 + 0.90 * dayLight;
+      float earthShine = 0.05 * (1.0 - dayLight);
+      vLight = sunLit * limb + earthShine;
+      if (facing < 0.03 && aSelected < 0.5) { gl_PointSize = 0.0; }
+      else { gl_PointSize = aSize * (1.0 + aSelected * 1.8) * uPixelRatio * (500.0 / -mvPos.z); }
+      gl_Position = projectionMatrix * mvPos;
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D uPoemTex;
+    uniform float uGlowIntensity; uniform float uTime;
+    varying vec3 vColor; varying float vAlpha; varying vec4 vUV; varying float vLight; varying float vSelected; varying float vPhase;
+    void main() {
+      vec2 uv = vec2(mix(vUV.x, vUV.z, gl_PointCoord.x), mix(vUV.y, vUV.w, 1.0 - gl_PointCoord.y));
+      vec4 tex = texture2D(uPoemTex, uv);
+      float pulse = 0.85 + 0.15 * sin(uTime * 1.2 + vPhase);
+      float coreAlpha = smoothstep(0.08, 0.35, tex.a);
+      float glowAlpha = smoothstep(0.0, 0.22, tex.a) * 0.7 * pulse;
+      if (coreAlpha < 0.01 && glowAlpha * uGlowIntensity < 0.01) discard;
+      float textLight = max(vLight, 0.4);
+      vec3 coreColor = vColor * textLight;
+      coreColor = mix(coreColor, vec3(1.0, 0.97, 0.85), vSelected * 0.5);
+      vec3 glowColor = mix(mix(vColor, vec3(1.0, 0.93, 0.72), 0.55), vec3(0.72, 0.82, 1.0), 0.28) * max(vLight, 0.6) * uGlowIntensity * pulse;
+      vec3 finalColor = coreColor * coreAlpha + glowColor * glowAlpha * (1.0 - coreAlpha * 0.75);
+      float finalAlpha = max(coreAlpha, glowAlpha * uGlowIntensity) * vAlpha;
+      gl_FragColor = vec4(finalColor, finalAlpha);
+    }
+  `,
+  transparent: true, depthWrite: false, blending: THREE.NormalBlending
+});
+
+const points = new THREE.Points(pGeo, pMat);
+
+// ==========【新增：底层月球底色载体球，补全球壳缺口】==========
+const moonBaseGeo = new THREE.SphereGeometry(RADIUS * 0.992, 128, 128);
+const moonBaseMat = new THREE.MeshStandardMaterial({
+  color: 0x4a4030,
+  roughness: 0.95,
+  metalness: 0.0,
+  transparent: true,
+  opacity: 0.45,
+  side: THREE.FrontSide,
+});
+const moonBase = new THREE.Mesh(moonBaseGeo, moonBaseMat);
+moonBase.layers.set(1); // 放入第1层，与 bloom 隔离
+scene.add(moonBase);
+// ============================================================
+
+scene.add(points);
+
+// ============================================================
+// 7. 鼠标交互 + P0修复：点击检测精度 + 边缘可见性
+// ============================================================
+let isDragging = false;
+let didDrag = false;
+let prevX = 0, prevY = 0;
+let rotX = 0, rotY = 0;
+let targetRotX = 0, targetRotY = 0;
+let autoRotate = true;
+let selectedIndex = -1;
+let pinchDist = 0, pinchStartZ = 0;
+
+const poemPanel = document.getElementById('poem-panel');
+const poemText = document.getElementById('poemText');
+const poemIndex = document.getElementById('poemIndex');
+
+function showPoem(index) {
+  selectedIndex = index;
+  const sel = pGeo.attributes.aSelected;
+  for (let i = 0; i < sel.count; i++) sel.array[i] = 0;
+  sel.array[index] = 1;
+  sel.needsUpdate = true;
+  const pi = charToPoem[index];
+  poemText.textContent = POEMS[pi];
+  poemIndex.textContent = `第 ${pi + 1} / 815 句 ·「${ALL_CHARS[index]}」`;
+  poemPanel.classList.add('show');
+}
+function hidePoem() {
+  selectedIndex = -1;
+  const sel = pGeo.attributes.aSelected;
+  for (let i = 0; i < sel.count; i++) sel.array[i] = 0;
+  sel.needsUpdate = true;
+  poemPanel.classList.remove('show');
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  isDragging = true; didDrag = false; autoRotate = false;
+  prevX = e.clientX; prevY = e.clientY;
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - prevX, dy = e.clientY - prevY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
+  targetRotY += dx * 0.005;
+  targetRotX += dy * 0.005;
+  targetRotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, targetRotX));
+  prevX = e.clientX; prevY = e.clientY;
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+
+// ===== P0修复：精确点击检测（触摸与鼠标共用）=====
+let touchTriggered = false;
+function handleTap(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = ((clientX - rect.left) / rect.width) * 2 - 1;
+  const my = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+  const lightDir = pMat.uniforms.uLightDir.value;
+  const camPos = camera.position;
+  const tmp = new THREE.Vector3();
+  const nrm = new THREE.Vector3();
+  const viewDir = new THREE.Vector3();
+  const euler = new THREE.Euler(0, 0, 0, 'XYZ');
+  const viewPos = new THREE.Vector3();
+  let bestIdx = -1;
+  let bestDist = Infinity;
+  const baseThreshold = 0.06;
+
+  for (let i = 0; i < N; i++) {
+    if (pGeo.attributes.aSelected.array[i] > 0.5) continue;
+
+    tmp.set(positions[i*3], positions[i*3+1], positions[i*3+2]);
+    euler.set(points.rotation.x, points.rotation.y, 0);
+    tmp.applyEuler(euler);
+
+    nrm.set(normals[i*3], normals[i*3+1], normals[i*3+2]);
+    nrm.applyEuler(euler);
+    viewDir.subVectors(camPos, tmp).normalize();
+    const facing = nrm.dot(viewDir);
+    if (facing < 0.1) continue;
+
+    const diff = nrm.dot(lightDir);
+    if (diff < -0.1) continue;
+
+    viewPos.copy(tmp).applyMatrix4(camera.matrixWorldInverse);
+    const viewZ = -viewPos.z;
+
+    tmp.project(camera);
+    const dx = tmp.x - mx, dy = tmp.y - my;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    const particleScreenSize = sizes[i] * renderer.getPixelRatio() * (500.0 / Math.max(viewZ, 0.1));
+    const threshold = baseThreshold + particleScreenSize * 0.3;
+
+    if (dist < threshold && dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+
+  if (bestIdx >= 0) showPoem(bestIdx);
+  else if (selectedIndex >= 0) hidePoem();
+}
+
+canvas.addEventListener('click', (e) => {
+  if (didDrag || touchTriggered) { touchTriggered = false; return; }
+  handleTap(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  camera.position.z += e.deltaY * 0.01;
+  camera.position.z = Math.max(8, Math.min(40, camera.position.z));
+}, { passive: false });
+
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    isDragging = true; didDrag = false; autoRotate = false;
+    prevX = e.touches[0].clientX; prevY = e.touches[0].clientY;
+  } else if (e.touches.length === 2) {
+    isDragging = false;
+    // 记录双指初始距离
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchDist = Math.sqrt(dx * dx + dy * dy);
+    pinchStartZ = camera.position.z;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1 && isDragging) {
+    const dx = e.touches[0].clientX - prevX, dy = e.touches[0].clientY - prevY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
+    targetRotY += dx * 0.005; targetRotX += dy * 0.005;
+    targetRotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, targetRotX));
+    prevX = e.touches[0].clientX; prevY = e.touches[0].clientY;
+  } else if (e.touches.length === 2 && pinchDist > 0) {
+    // 双指捏合缩放
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const scale = pinchDist / dist;
+    camera.position.z = Math.max(8, Math.min(40, pinchStartZ * scale));
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  // 单指抬起且未拖拽 → 视为点击
+  if (e.touches.length === 0 && isDragging && !didDrag) {
+    touchTriggered = true;
+    const touch = e.changedTouches[0];
+    handleTap(touch.clientX, touch.clientY);
+  }
+  if (e.touches.length < 2) pinchDist = 0;
+  if (e.touches.length === 0) isDragging = false;
+});
+
+// ============================================================
+// 8. 渲染循环
+// ============================================================
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  pMat.uniforms.uTime.value += dt;
+  // 月辉呼吸脉动
+  const tGlow = pMat.uniforms.uTime.value;
+  pMat.uniforms.uGlowIntensity.value = 0.75 + Math.sin(tGlow * 0.45) * 0.12;
+
+  if (autoRotate) targetRotY += dt * 0.08;
+
+  rotX += (targetRotX - rotX) * 0.08;
+  rotY += (targetRotY - rotY) * 0.08;
+
+  points.rotation.x = rotX;
+  points.rotation.y = rotY;
+  // ==========【新增：底层球体跟随诗球同步旋转】==========
+  moonBase.rotation.x = rotX;
+  moonBase.rotation.y = rotY;
+  // ======================================================
+  stars.rotation.y += dt * 0.002;
+
+  composer.render();
+}
+animate();
+
+// ============================================================
+// 9. 响应式
+// ============================================================
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  pMat.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+console.log("✅ 月球诗球渲染完成 · 815句诗拆为单字均匀分布 · 纯文字交织月表");
+</script>
+</body>
+</html>
